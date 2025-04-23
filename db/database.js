@@ -6,20 +6,54 @@ let db; // Database instance
 export const initDB = async () => {
   try {
     db = await openDatabaseAsync('inventory.db');
-    
-    // Enable foreign key support
     await db.execAsync('PRAGMA foreign_keys = ON;');
 
-    // Create tables with proper constraints
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS persons (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE,
-        phoneNumber TEXT NOT NULL,
-        priority INTEGER NOT NULL DEFAULT 1
-      );
-    `);
+    // Check if migration is needed
+    const itemsColumns = await db.getAllAsync('PRAGMA table_info(items)');
+    const hasPersonId = itemsColumns.some(col => col.name === 'personId');
 
+    if (!hasPersonId) {
+      console.log('Performing database migration...');
+      await db.withTransactionAsync(async () => {
+        // Backup old items table
+        await db.execAsync('ALTER TABLE items RENAME TO items_old');
+
+        // Create new tables with current schema
+        await db.execAsync(`
+          CREATE TABLE IF NOT EXISTS persons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            phoneNumber TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 1
+          );
+        `);
+
+        await db.execAsync(`
+          CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            itemTypeId INTEGER NOT NULL,
+            personId INTEGER NOT NULL,
+            pcbModelId INTEGER NOT NULL,
+            estimatedTime TEXT NOT NULL,
+            FOREIGN KEY (itemTypeId) REFERENCES itemTypes(id),
+            FOREIGN KEY (personId) REFERENCES persons(id),
+            FOREIGN KEY (pcbModelId) REFERENCES pcbModels(id)
+          );
+        `);
+
+        // Migrate data (adjust according to your old schema)
+        await db.execAsync(`
+          INSERT INTO items (id, itemTypeId, personId, pcbModelId, estimatedTime)
+          SELECT id, 1 AS itemTypeId, 1 AS personId, 1 AS pcbModelId, estimatedTime
+          FROM items_old
+        `);
+
+        // Cleanup old table
+        await db.execAsync('DROP TABLE items_old');
+      });
+    }
+
+    // Create other tables if they don't exist
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS itemTypes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,19 +65,6 @@ export const initDB = async () => {
       CREATE TABLE IF NOT EXISTS pcbModels (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE
-      );
-    `);
-
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        itemTypeId INTEGER NOT NULL,
-        personId INTEGER NOT NULL,
-        pcbModelId INTEGER NOT NULL,
-        estimatedTime TEXT NOT NULL,
-        FOREIGN KEY (itemTypeId) REFERENCES itemTypes(id) ON DELETE CASCADE,
-        FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE,
-        FOREIGN KEY (pcbModelId) REFERENCES pcbModels(id) ON DELETE CASCADE
       );
     `);
 
