@@ -1,27 +1,57 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet, Alert } from 'react-native';
-import { addItemToDB } from '../db/database';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, Button, StyleSheet, Alert, Modal, TouchableOpacity } from 'react-native';
+import RNPickerSelect from 'react-native-picker-select';
+import { addItemToDB, getAllItemTypes, getAllPersons, getAllPcbModels, addPerson, addItemType, addPcbModel } from '../db/database';
 
 export default function AddItemScreen() {
-  const [itemType, setItemType] = useState('');
-  const [personName, setPersonName] = useState('');
-  const [pcbModel, setPcbModel] = useState('');
+  const [itemTypeId, setItemTypeId] = useState(null);
+  const [personId, setPersonId] = useState(null);
+  const [pcbModelId, setPcbModelId] = useState(null);
   const [estimatedTime, setEstimatedTime] = useState('');
+  const [itemTypes, setItemTypes] = useState([]);
+  const [persons, setPersons] = useState([]);
+  const [pcbModels, setPcbModels] = useState([]);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalType, setModalType] = useState('');
+  const [newEntry, setNewEntry] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [priority, setPriority] = useState(1);
+
+  useEffect(() => {
+    const fetchDropdownData = async () => {
+      try {
+        const itemTypesData = await getAllItemTypes();
+        const personsData = await getAllPersons();
+        const pcbModelsData = await getAllPcbModels();
+
+        setItemTypes(itemTypesData.map(item => ({ label: item.name, value: item.id })));
+        setPersons(personsData.map(person => ({
+          label: `${person.name} (${person.phoneNumber})`,
+          value: person.id,
+        })));
+        setPcbModels(pcbModelsData.map(model => ({ label: model.name, value: model.id })));
+      } catch (error) {
+        console.error('Error fetching dropdown data:', error);
+      }
+    };
+
+    fetchDropdownData();
+  }, []);
 
   const handleSubmit = async () => {
-    if (!itemType || !personName || !pcbModel || !estimatedTime) {
+    if (!itemTypeId || !personId || !pcbModelId || !estimatedTime) {
       Alert.alert('Error', 'Please fill out all fields.');
       return;
     }
 
     try {
-      await addItemToDB(itemType, personName, pcbModel, estimatedTime);
+      await addItemToDB(itemTypeId, personId, pcbModelId, estimatedTime);
       Alert.alert('Success', 'Item added successfully!');
 
       // Clear the form
-      setItemType('');
-      setPersonName('');
-      setPcbModel('');
+      setItemTypeId(null);
+      setPersonId(null);
+      setPcbModelId(null);
       setEstimatedTime('');
     } catch (error) {
       console.error('Error adding item:', error);
@@ -29,31 +59,57 @@ export default function AddItemScreen() {
     }
   };
 
+  const handleAddNewEntry = async () => {
+    try {
+      if (modalType === 'person') {
+        await addPerson(newEntry, phoneNumber, priority);
+      } else if (modalType === 'itemType') {
+        await addItemType(newEntry);
+      } else if (modalType === 'pcbModel') {
+        await addPcbModel(newEntry);
+      }
+      Alert.alert('Success', `${modalType} added successfully!`);
+      setModalVisible(false);
+      setNewEntry('');
+      setPhoneNumber('');
+      setPriority(1);
+    } catch (error) {
+      console.error(`Error adding ${modalType}:`, error);
+      Alert.alert('Error', `Failed to add ${modalType}.`);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.label}>Item Type</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="e.g., AC, Washing Machine"
-        value={itemType}
-        onChangeText={setItemType}
+      <RNPickerSelect
+        onValueChange={setItemTypeId}
+        items={itemTypes}
+        value={itemTypeId}
+        placeholder={{ label: 'Select Item Type', value: null }}
+        style={pickerSelectStyles}
       />
+      <Button title="Add Item Type" onPress={() => { setModalType('itemType'); setModalVisible(true); }} />
 
-      <Text style={styles.label}>Person Name</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Enter person's name"
-        value={personName}
-        onChangeText={setPersonName}
+      <Text style={styles.label}>Person</Text>
+      <RNPickerSelect
+        onValueChange={setPersonId}
+        items={persons}
+        value={personId}
+        placeholder={{ label: 'Select Person', value: null }}
+        style={pickerSelectStyles}
       />
+      <Button title="Add Person" onPress={() => { setModalType('person'); setModalVisible(true); }} />
 
       <Text style={styles.label}>PCB Model</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="e.g., Samsung, LG"
-        value={pcbModel}
-        onChangeText={setPcbModel}
+      <RNPickerSelect
+        onValueChange={setPcbModelId}
+        items={pcbModels}
+        value={pcbModelId}
+        placeholder={{ label: 'Select PCB Model', value: null }}
+        style={pickerSelectStyles}
       />
+      <Button title="Add PCB Model" onPress={() => { setModalType('pcbModel'); setModalVisible(true); }} />
 
       <Text style={styles.label}>Estimated Time</Text>
       <TextInput
@@ -64,6 +120,42 @@ export default function AddItemScreen() {
       />
 
       <Button title="Add Item" onPress={handleSubmit} />
+
+      {/* Modal for Adding New Entries */}
+      <Modal visible={modalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.label}>Add New {modalType}</Text>
+            <TextInput
+              style={styles.input}
+              placeholder={`Enter ${modalType} name`}
+              value={newEntry}
+              onChangeText={setNewEntry}
+            />
+            {modalType === 'person' && (
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter phone number"
+                  value={phoneNumber}
+                  onChangeText={setPhoneNumber}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter priority (1-5)"
+                  value={priority.toString()}
+                  onChangeText={(value) => setPriority(Number(value))}
+                  keyboardType="numeric"
+                />
+              </>
+            )}
+            <Button title="Save" onPress={handleAddNewEntry} />
+            <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <Text style={styles.cancelButton}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -87,4 +179,44 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     fontSize: 16,
   },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    width: '80%',
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 10,
+  },
+  cancelButton: {
+    color: 'red',
+    textAlign: 'center',
+    marginTop: 10,
+  },
 });
+
+const pickerSelectStyles = {
+  inputIOS: {
+    fontSize: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: 'gray',
+    borderRadius: 4,
+    color: 'black',
+    marginBottom: 15,
+  },
+  inputAndroid: {
+    fontSize: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: 'gray',
+    borderRadius: 4,
+    color: 'black',
+    marginBottom: 15,
+  },
+};
