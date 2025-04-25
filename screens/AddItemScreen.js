@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, Alert, Modal, TouchableOpacity } from 'react-native';
 import RNPickerSelect from 'react-native-picker-select';
-import { addItemToDB, getAllItemTypes, getAllPersons, getAllPcbModels, addPerson, addItemType, addPcbModel } from '../db/database';
+import { addItemToDB, getAllItemTypes, getAllPersons, getAllPcbModels, addPerson, addItemType, addPcbModel, initDB } from '../db/database'; // Import the database initialization function
 
 export default function AddItemScreen() {
   const [itemTypeId, setItemTypeId] = useState(null);
@@ -16,8 +16,25 @@ export default function AddItemScreen() {
   const [newEntry, setNewEntry] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [priority, setPriority] = useState(1);
+  const [dbInitialized, setDbInitialized] = useState(false);
 
   useEffect(() => {
+    const initializeDatabase = async () => {
+      try {
+        await initDB(); // Initialize the database
+        setDbInitialized(true); // Set the state to indicate the database is ready
+      } catch (error) {
+        console.error('Error initializing database:', error);
+        Alert.alert('Error', 'Failed to initialize the database.');
+      }
+    };
+
+    initializeDatabase();
+  }, []);
+
+  useEffect(() => {
+    if (!dbInitialized) return; // Wait until the database is initialized
+
     const fetchDropdownData = async () => {
       try {
         const itemTypesData = await getAllItemTypes();
@@ -36,7 +53,7 @@ export default function AddItemScreen() {
     };
 
     fetchDropdownData();
-  }, []);
+  }, [dbInitialized]); // Run this effect only after the database is initialized
 
   const handleSubmit = async () => {
     if (!itemTypeId || !personId || !pcbModelId || !estimatedTime) {
@@ -69,6 +86,7 @@ export default function AddItemScreen() {
         await addPcbModel(newEntry);
       }
       Alert.alert('Success', `${modalType} added successfully!`);
+      await fetchDropdownData(); // Refresh dropdown data
       setModalVisible(false);
       setNewEntry('');
       setPhoneNumber('');
