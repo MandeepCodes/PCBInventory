@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Button, StyleSheet, Alert, Modal, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, Button, StyleSheet, Alert } from 'react-native';
 import RNPickerSelect from 'react-native-picker-select';
-import { addItemToDB, getAllItemTypes, getAllPersons, getAllPcbModels, addPerson, addItemType, addPcbModel, initDB } from '../db/database'; // Import the database initialization function
+import { addItemToDB, getAllItemTypes, getAllPersons, getAllPcbModels, initDB } from '../db/database';
 
 export default function AddItemScreen() {
   const [itemTypeId, setItemTypeId] = useState(null);
@@ -11,11 +11,6 @@ export default function AddItemScreen() {
   const [itemTypes, setItemTypes] = useState([]);
   const [persons, setPersons] = useState([]);
   const [pcbModels, setPcbModels] = useState([]);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [modalType, setModalType] = useState('');
-  const [newEntry, setNewEntry] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [priority, setPriority] = useState(1);
   const [dbInitialized, setDbInitialized] = useState(false);
 
   useEffect(() => {
@@ -76,27 +71,6 @@ export default function AddItemScreen() {
     }
   };
 
-  const handleAddNewEntry = async () => {
-    try {
-      if (modalType === 'person') {
-        await addPerson(newEntry, phoneNumber, priority);
-      } else if (modalType === 'itemType') {
-        await addItemType(newEntry);
-      } else if (modalType === 'pcbModel') {
-        await addPcbModel(newEntry);
-      }
-      Alert.alert('Success', `${modalType} added successfully!`);
-      await fetchDropdownData(); // Refresh dropdown data
-      setModalVisible(false);
-      setNewEntry('');
-      setPhoneNumber('');
-      setPriority(1);
-    } catch (error) {
-      console.error(`Error adding ${modalType}:`, error);
-      Alert.alert('Error', `Failed to add ${modalType}.`);
-    }
-  };
-
   return (
     <View style={styles.container}>
       <Text style={styles.label}>Item Type</Text>
@@ -107,7 +81,6 @@ export default function AddItemScreen() {
         placeholder={{ label: 'Select Item Type', value: null }}
         style={pickerSelectStyles}
       />
-      <Button title="Add Item Type" onPress={() => { setModalType('itemType'); setModalVisible(true); }} />
 
       <Text style={styles.label}>Person</Text>
       <RNPickerSelect
@@ -117,7 +90,6 @@ export default function AddItemScreen() {
         placeholder={{ label: 'Select Person', value: null }}
         style={pickerSelectStyles}
       />
-      <Button title="Add Person" onPress={() => { setModalType('person'); setModalVisible(true); }} />
 
       <Text style={styles.label}>PCB Model</Text>
       <RNPickerSelect
@@ -127,7 +99,6 @@ export default function AddItemScreen() {
         placeholder={{ label: 'Select PCB Model', value: null }}
         style={pickerSelectStyles}
       />
-      <Button title="Add PCB Model" onPress={() => { setModalType('pcbModel'); setModalVisible(true); }} />
 
       <Text style={styles.label}>Estimated Time</Text>
       <TextInput
@@ -138,42 +109,6 @@ export default function AddItemScreen() {
       />
 
       <Button title="Add Item" onPress={handleSubmit} />
-
-      {/* Modal for Adding New Entries */}
-      <Modal visible={modalVisible} animationType="slide" transparent={true}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.label}>Add New {modalType}</Text>
-            <TextInput
-              style={styles.input}
-              placeholder={`Enter ${modalType} name`}
-              value={newEntry}
-              onChangeText={setNewEntry}
-            />
-            {modalType === 'person' && (
-              <>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter phone number"
-                  value={phoneNumber}
-                  onChangeText={setPhoneNumber}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter priority (1-5)"
-                  value={priority.toString()}
-                  onChangeText={(value) => setPriority(Number(value))}
-                  keyboardType="numeric"
-                />
-              </>
-            )}
-            <Button title="Save" onPress={handleAddNewEntry} />
-            <TouchableOpacity onPress={() => setModalVisible(false)}>
-              <Text style={styles.cancelButton}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -196,23 +131,6 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 15,
     fontSize: 16,
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    width: '80%',
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 10,
-  },
-  cancelButton: {
-    color: 'red',
-    textAlign: 'center',
-    marginTop: 10,
   },
 });
 
