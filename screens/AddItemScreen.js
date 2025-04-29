@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, Alert } from 'react-native';
 import RNPickerSelect from 'react-native-picker-select';
+import { useFocusEffect } from '@react-navigation/native'; // Import useFocusEffect
 import { addItemToDB, getAllItemTypes, getAllPersons, getAllPcbModels, initDB } from '../db/database';
 
 export default function AddItemScreen() {
@@ -27,28 +28,30 @@ export default function AddItemScreen() {
     initializeDatabase();
   }, []);
 
-  useEffect(() => {
-    if (!dbInitialized) return; // Wait until the database is initialized
+  const fetchDropdownData = async () => {
+    try {
+      const itemTypesData = await getAllItemTypes();
+      const personsData = await getAllPersons();
+      const pcbModelsData = await getAllPcbModels();
 
-    const fetchDropdownData = async () => {
-      try {
-        const itemTypesData = await getAllItemTypes();
-        const personsData = await getAllPersons();
-        const pcbModelsData = await getAllPcbModels();
+      setItemTypes(itemTypesData.map(item => ({ label: item.name, value: item.id })));
+      setPersons(personsData.map(person => ({
+        label: `${person.name} (${person.phoneNumber})`,
+        value: person.id,
+      })));
+      setPcbModels(pcbModelsData.map(model => ({ label: model.name, value: model.id })));
+    } catch (error) {
+      console.error('Error fetching dropdown data:', error);
+    }
+  };
 
-        setItemTypes(itemTypesData.map(item => ({ label: item.name, value: item.id })));
-        setPersons(personsData.map(person => ({
-          label: `${person.name} (${person.phoneNumber})`,
-          value: person.id,
-        })));
-        setPcbModels(pcbModelsData.map(model => ({ label: model.name, value: model.id })));
-      } catch (error) {
-        console.error('Error fetching dropdown data:', error);
+  useFocusEffect(
+    React.useCallback(() => {
+      if (dbInitialized) {
+        fetchDropdownData(); // Refresh dropdown data when the screen gains focus
       }
-    };
-
-    fetchDropdownData();
-  }, [dbInitialized]); // Run this effect only after the database is initialized
+    }, [dbInitialized])
+  );
 
   const handleSubmit = async () => {
     if (!itemTypeId || !personId || !pcbModelId || !estimatedTime) {

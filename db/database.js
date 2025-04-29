@@ -16,6 +16,7 @@ export const initDB = async () => {
   try {
     // Open database connection
     db = await openDatabaseAsync('inventory.db');
+    // Drop all tables if they exist
     await db.execAsync('PRAGMA foreign_keys = ON;');
 
     // Create reference tables first
@@ -75,7 +76,8 @@ export const initDB = async () => {
             itemTypeId INTEGER NOT NULL,
             personId INTEGER NOT NULL,
             pcbModelId INTEGER NOT NULL,
-            estimatedTime TEXT NOT NULL,
+            estimatedTime INTEGER NOT NULL, -- Store as an integer (number of days)
+            createdAt TEXT NOT NULL,
             FOREIGN KEY (itemTypeId) REFERENCES itemTypes(id) ON DELETE CASCADE,
             FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE,
             FOREIGN KEY (pcbModelId) REFERENCES pcbModels(id) ON DELETE CASCADE
@@ -108,7 +110,8 @@ export const initDB = async () => {
           itemTypeId INTEGER NOT NULL,
           personId INTEGER NOT NULL,
           pcbModelId INTEGER NOT NULL,
-          estimatedTime TEXT NOT NULL,
+          estimatedTime INTEGER NOT NULL, -- Store as an integer (number of days)
+          createdAt TEXT NOT NULL, -- ISO 8601 timestamp
           FOREIGN KEY (itemTypeId) REFERENCES itemTypes(id) ON DELETE CASCADE,
           FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE,
           FOREIGN KEY (pcbModelId) REFERENCES pcbModels(id) ON DELETE CASCADE
@@ -130,12 +133,13 @@ export const initDB = async () => {
 // ==================== ITEM OPERATIONS ====================
 export const addItemToDB = async (itemTypeId, personId, pcbModelId, estimatedTime) => {
   if (!db) throw new Error('Database not initialized');
-  
+
   try {
+    const currentTime = new Date().toISOString(); // Get the current timestamp
     return await db.withTransactionAsync(async () => {
       const result = await db.runAsync(
-        `INSERT INTO items (itemTypeId, personId, pcbModelId, estimatedTime) VALUES (?, ?, ?, ?)`,
-        [itemTypeId, personId, pcbModelId, estimatedTime]
+        `INSERT INTO items (itemTypeId, personId, pcbModelId, estimatedTime, createdAt) VALUES (?, ?, ?, ?, ?)`,
+        [itemTypeId, personId, pcbModelId, estimatedTime, currentTime]
       );
       return result.lastInsertRowId;
     });
@@ -174,6 +178,34 @@ export const deleteItem = async (itemId) => {
     return true;
   } catch (error) {
     console.error('Error deleting item:', error);
+    throw error;
+  }
+};
+
+export const getItemsByDueStatus = async () => {
+  if (!db) throw new Error('Database not initialized');
+
+  try {
+    const today = new Date().toISOString().split('T')[0]; // Get today's date in YYYY-MM-DD format
+    return await db.getAllAsync(`
+      SELECT items.*, 
+        persons.name as personName, persons.priority,
+        itemTypes.name as itemType,
+        pcbModels.name as pcbModel,
+        DATE(items.createdAt, '+' || items.estimatedTime || ' days') as dueDate, -- Add days directly
+        CASE 
+          WHEN DATE(items.createdAt, '+' || items.estimatedTime || ' days') = ? THEN 'dueToday'
+          WHEN DATE(items.createdAt, '+' || items.estimatedTime || ' days') < ? THEN 'overdue'
+          ELSE 'upcoming'
+        END as status
+      FROM items
+      JOIN persons ON items.personId = persons.id
+      JOIN itemTypes ON items.itemTypeId = itemTypes.id
+      JOIN pcbModels ON items.pcbModelId = pcbModels.id
+      ORDER BY persons.priority DESC, items.createdAt ASC
+    `, [today, today]);
+  } catch (error) {
+    console.error('Error fetching items by due status:', error);
     throw error;
   }
 };
@@ -353,5 +385,18 @@ export const databaseStatus = async () => {
     };
   } catch (error) {
     return { initialized: false, error: error.message };
+  }
+};
+
+export const clearTable = async (tableName) => {
+  if (!db) throw new Error('Database not initialized');
+
+  try {
+    await db.runAsync(`DELETE FROM ${tableName}`);
+    console.log(`Table ${tableName} cleared successfully.`);
+    return true;
+  } catch (error) {
+    console.error(`Error clearing table ${tableName}:`, error);
+    throw error;
   }
 };
