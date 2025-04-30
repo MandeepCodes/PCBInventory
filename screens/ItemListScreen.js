@@ -5,14 +5,19 @@ import {
   FlatList,
   StyleSheet,
   RefreshControl,
-  Button,
   Alert,
   Modal,
   TextInput,
   TouchableOpacity,
+  Switch,
+  Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { getItemsByDueStatus, updateItemStatus, updateRepairDetails } from '../db/database'; // Add updateRepairDetails function
+import {
+  getItemsByDueStatus,
+  updateItemStatus,
+  updateRepairDetails,
+} from '../db/database';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 
 export default function InventoryScreen() {
@@ -23,24 +28,17 @@ export default function InventoryScreen() {
   const [repairAmount, setRepairAmount] = useState('');
   const [isPaid, setIsPaid] = useState(false);
 
-  // Fetch items from the database
+  // Fetch items and sort them
   const fetchItems = async () => {
     try {
       const data = await getItemsByDueStatus();
-
-      // Sort by dueDate first, then by priority
       const sortedData = data.sort((a, b) => {
         const dateA = new Date(a.dueDate);
         const dateB = new Date(b.dueDate);
-
-        // Compare dates first
         if (dateA < dateB) return -1;
         if (dateA > dateB) return 1;
-
-        // If dates are the same, compare priority (higher priority first)
-        return b.priority - a.priority;
+        return b.priority - a.priority; // higher priority first
       });
-
       setItems(sortedData);
     } catch (error) {
       console.error('Error fetching inventory items:', error);
@@ -59,48 +57,67 @@ export default function InventoryScreen() {
     }, [])
   );
 
-  // Handle Non-Repairable button
+  // Function to send WhatsApp message using Linking API
+  const sendWhatsAppMessage = (phoneNumber, message) => {
+    const url = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(
+      message
+    )}`;
+    Linking.canOpenURL(url)
+      .then((supported) => {
+        if (!supported) {
+          Alert.alert('Error', 'WhatsApp is not installed on your device.');
+        } else {
+          return Linking.openURL(url);
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        Alert.alert('Error', 'Failed to send WhatsApp message.');
+      });
+  };
+
+  // Handler for "Done" button: send message or SMS to customer.
+  const handleDone = (item) => {
+    // Compose a detailed message.
+    const message = `Dear ${item.personName}, your ${item.itemType} (${item.pcbModel}) has been repaired and is ready for collection at our shop. Please collect it by ${item.dueDate}. Thank you for choosing us!`;
+
+    // Assume phone number is provided in item.phoneNumber
+    const phone = item.phoneNumber || '';
+    if (!phone) {
+      Alert.alert('No Contact', 'No phone number available for this customer.');
+      return;
+    }
+
+    // Send via WhatsApp.
+    sendWhatsAppMessage(phone, message);
+  };
+
+  // Handler for Non-Repairable button
   const handleNonRepairable = async (itemId) => {
     try {
-      // Update the item's status in the database
       await updateItemStatus(itemId, 'nonRepairable');
-
-      // Remove the item from the list
-      setItems((prevItems) => prevItems.filter((item) => item.id !== itemId));
+      setItems((prev) => prev.filter((item) => item.id !== itemId));
     } catch (error) {
       console.error('Error marking item as non-repairable:', error);
       Alert.alert('Error', 'Failed to mark item as non-repairable.');
     }
   };
 
-  // Handle Done button
-  const handleDone = (item) => {
-    Alert.alert('Done', `Send WhatsApp message to ${item.personName}.`);
-    // Placeholder for WhatsApp message implementation
-  };
-
-  // Handle Handed Over button
+  // Handler for Handed Over button – open modal for repair details input.
   const handleHandedOver = (item) => {
     setSelectedItem(item);
-    setModalVisible(true); // Show modal
+    setModalVisible(true);
   };
 
-  // Submit Handed Over details
+  // Submit handed over details.
   const submitHandedOver = async () => {
     try {
-      // Update the item's repair details and status in the database
       await updateRepairDetails(selectedItem.id, parseFloat(repairAmount), isPaid);
-
-      // Show confirmation alert
       Alert.alert(
         'Handed Over',
         `Repair Amount: ${repairAmount}, Paid: ${isPaid ? 'Yes' : 'No'}`
       );
-
-      // Remove the handed-over item from the list
-      setItems((prevItems) => prevItems.filter((item) => item.id !== selectedItem.id));
-
-      // Reset modal state
+      setItems((prev) => prev.filter((item) => item.id !== selectedItem.id));
       setModalVisible(false);
       setRepairAmount('');
       setIsPaid(false);
@@ -110,31 +127,33 @@ export default function InventoryScreen() {
     }
   };
 
+  // Render each inventory item as a card.
   const renderItem = ({ item }) => {
-    // Determine the background color based on the item's status
     const backgroundColor =
       item.status === 'dueToday'
-        ? '#d4edda' // Light green for due today
+        ? '#d4edda'
         : item.status === 'overdue'
-        ? '#f8d7da' // Red for overdue
-        : '#fff3cd'; // Yellow for upcoming
+        ? '#f8d7da'
+        : '#fff3cd';
 
     return (
-      <View style={[styles.item, { backgroundColor }]}>
-        <Text style={styles.title}>{item.itemType}</Text>
-        <Text>Person: {item.personName} (Priority: {item.priority})</Text>
-        <Text>PCB Model: {item.pcbModel}</Text>
-        <Text>Due Date: {item.dueDate}</Text>
-        <Text>Status: {item.status}</Text>
+      <View style={[styles.itemCard, { backgroundColor }]}>
+        <Text style={styles.itemTitle}>{item.itemType}</Text>
+        <Text style={styles.itemText}>
+          Person: <Text style={styles.boldText}>{item.personName}</Text> (Priority: {item.priority})
+        </Text>
+        <Text style={styles.itemText}>PCB Model: {item.pcbModel}</Text>
+        <Text style={styles.itemText}>Due Date: {item.dueDate}</Text>
+        <Text style={styles.itemText}>Status: {item.status}</Text>
         <View style={styles.iconContainer}>
-          <TouchableOpacity onPress={() => handleNonRepairable(item.id)}>
-            <FontAwesome name="times-circle" size={24} color="#dc3545" />
+          <TouchableOpacity onPress={() => handleNonRepairable(item.id)} style={styles.iconButton}>
+            <FontAwesome name="times-circle" size={28} color="#dc3545" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => handleDone(item)}>
-            <FontAwesome name="check-circle" size={24} color="#28a745" />
+          <TouchableOpacity onPress={() => handleDone(item)} style={styles.iconButton}>
+            <FontAwesome name="check-circle" size={28} color="#28a745" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => handleHandedOver(item)}>
-            <FontAwesome name="handshake-o" size={24} color="#007bff" />
+          <TouchableOpacity onPress={() => handleHandedOver(item)} style={styles.iconButton}>
+            <FontAwesome name="handshake-o" size={28} color="#007bff" />
           </TouchableOpacity>
         </View>
       </View>
@@ -147,39 +166,42 @@ export default function InventoryScreen() {
         data={items}
         keyExtractor={(item) => item.id.toString()}
         renderItem={renderItem}
-        ListHeaderComponent={() => <Text style={styles.header}>Inventory</Text>}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        contentContainerStyle={styles.listContent}
       />
-      {/* Modal for Handed Over */}
+      {/* Modal for handed over details */}
       <Modal visible={modalVisible} animationType="slide" transparent={true}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Handed Over</Text>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Mark as Handed Over</Text>
             <TextInput
-              style={styles.input}
+              style={styles.modalInput}
               placeholder="Enter Repair Amount"
               keyboardType="numeric"
+              placeholderTextColor="#aaa"
               value={repairAmount}
               onChangeText={setRepairAmount}
             />
-            <View style={styles.checkboxContainer}>
-              <Text>Paid:</Text>
-              <TouchableOpacity onPress={() => setIsPaid(!isPaid)}>
-                <FontAwesome
-                  name={isPaid ? 'check-square' : 'square-o'}
-                  size={24}
-                  color="#007bff"
-                />
+            <View style={styles.switchRow}>
+              <Text style={styles.modalText}>Paid:</Text>
+              <Switch
+                value={isPaid}
+                onValueChange={setIsPaid}
+                trackColor={{ false: '#ccc', true: '#28a745' }}
+                thumbColor="#fff"
+              />
+            </View>
+            <View style={styles.modalButtonRow}>
+              <TouchableOpacity style={styles.modalSubmitButton} onPress={submitHandedOver}>
+                <Text style={styles.modalButtonText}>Submit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => setModalVisible(false)}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
               </TouchableOpacity>
             </View>
-            <Button title="Submit" onPress={submitHandedOver} />
-            <Button
-              title="Cancel"
-              onPress={() => setModalVisible(false)}
-              color="#dc3545"
-            />
           </View>
         </View>
       </Modal>
@@ -190,59 +212,119 @@ export default function InventoryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#eef2f5',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  listContent: {
+    paddingBottom: 30,
+  },
+  itemCard: {
     padding: 20,
-    backgroundColor: '#fff',
-  },
-  header: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    borderRadius: 12,
     marginBottom: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
   },
-  item: {
-    padding: 15,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 5,
-    marginBottom: 10,
-  },
-  title: {
-    fontSize: 18,
+  itemTitle: {
+    fontSize: 22,
     fontWeight: 'bold',
+    color: '#007bff',
+    marginBottom: 8,
+  },
+  itemText: {
+    fontSize: 16,
+    marginBottom: 4,
+    color: '#555',
+  },
+  boldText: {
+    fontWeight: '600',
+    color: '#333',
   },
   iconContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
+    marginTop: 15,
+    justifyContent: 'space-around',
   },
-  modalContainer: {
+  iconButton: {
+    padding: 5,
+  },
+  modalOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
-  modalContent: {
-    width: '80%',
+  modalCard: {
+    width: '85%',
     backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 10,
+    borderRadius: 12,
+    paddingVertical: 30,
+    paddingHorizontal: 20,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 10,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
+    color: '#333',
     marginBottom: 20,
   },
-  input: {
+  modalInput: {
     width: '100%',
+    fontSize: 18,
+    padding: 12,
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 5,
-    padding: 10,
+    borderColor: '#ddd',
+    borderRadius: 8,
     marginBottom: 20,
+    color: '#333',
+    backgroundColor: '#f7f7f7',
   },
-  checkboxContainer: {
+  switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 25,
+    width: '100%',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+  },
+  modalText: {
+    fontSize: 18,
+    color: '#555',
+  },
+  modalButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  modalSubmitButton: {
+    backgroundColor: '#28a745',
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginRight: 10,
+  },
+  modalCancelButton: {
+    backgroundColor: '#dc3545',
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginLeft: 10,
+  },
+  modalButtonText: {
+    fontSize: 18,
+    color: '#fff',
+    textAlign: 'center',
+    fontWeight: '600',
   },
 });
+
+//export default InventoryScreen;

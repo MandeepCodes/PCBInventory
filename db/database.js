@@ -95,7 +95,7 @@ export const initDB = async () => {
 };
 
 // Rest of your CRUD operations remain the same as previous version
-// (addItemToDB, getAllItems, deleteItem, addPerson, etc.)
+// (addItemToDB, getAllItems, addPerson, etc.)
 
 // ==================== ITEM OPERATIONS ====================
 export const addItemToDB = async (itemTypeId, personId, pcbModelId, estimatedTime) => {
@@ -137,18 +137,6 @@ export const getAllItems = async () => {
   }
 };
 
-export const deleteItem = async (itemId) => {
-  if (!db) throw new Error('Database not initialized');
-  
-  try {
-    await db.runAsync('DELETE FROM items WHERE id = ?', [itemId]);
-    return true;
-  } catch (error) {
-    console.error('Error deleting item:', error);
-    throw error;
-  }
-};
-
 // Fetch items by due status, excluding "nonRepairable" and "handedOver"
 export const getItemsByDueStatus = async () => {
   if (!db) throw new Error('Database not initialized');
@@ -157,7 +145,7 @@ export const getItemsByDueStatus = async () => {
     const today = new Date().toISOString().split('T')[0]; // Get today's date in YYYY-MM-DD format
     return await db.getAllAsync(`
       SELECT items.*, 
-        persons.name as personName, persons.priority,
+        persons.name as personName, persons.phoneNumber, persons.priority,
         itemTypes.name as itemType,
         pcbModels.name as pcbModel,
         DATE(items.createdAt, '+' || items.estimatedTime || ' days') as dueDate,
@@ -372,36 +360,7 @@ export const resetDatabase = async () => {
     console.error('Error resetting database:', error);
     throw error;
   }
-};
 
-export const databaseStatus = async () => {
-  if (!db) return { initialized: false };
-  
-  try {
-    const tables = await db.getAllAsync(
-      "SELECT name FROM sqlite_master WHERE type='table'"
-    );
-    return {
-      initialized: true,
-      tables: tables.map(t => t.name),
-      itemCount: (await db.getFirstAsync('SELECT COUNT(*) as count FROM items'))?.count || 0
-    };
-  } catch (error) {
-    return { initialized: false, error: error.message };
-  }
-};
-
-export const clearTable = async (tableName) => {
-  if (!db) throw new Error('Database not initialized');
-
-  try {
-    await db.runAsync(`DELETE FROM ${tableName}`);
-    console.log(`Table ${tableName} cleared successfully.`);
-    return true;
-  } catch (error) {
-    console.error(`Error clearing table ${tableName}:`, error);
-    throw error;
-  }
 };
 
 export const getFinanceSummary = async () => {
