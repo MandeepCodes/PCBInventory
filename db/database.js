@@ -16,7 +16,6 @@ export const initDB = async () => {
   try {
     // Open database connection
     db = await openDatabaseAsync('inventory.db');
-    // Drop all tables if they exist
     await db.execAsync('PRAGMA foreign_keys = ON;');
 
     // Create reference tables first
@@ -43,75 +42,43 @@ export const initDB = async () => {
       );
     `);
 
-    // Check if migration is needed
+    // Check if the items table exists
     const itemsExists = await tableExists('items');
-    let needsMigration = false;
-
     if (itemsExists) {
+      // Check for missing columns in the items table
       const itemsColumns = await db.getAllAsync('PRAGMA table_info(items)');
-      needsMigration = !itemsColumns.some(col => col.name === 'personId');
-    }
+      const hasRepairAmount = itemsColumns.some(col => col.name === 'repairAmount');
+      const hasIsPaid = itemsColumns.some(col => col.name === 'isPaid');
+      const hasStatus = itemsColumns.some(col => col.name === 'status');
+      const hasUpdatedAt = itemsColumns.some(col => col.name === 'updatedAt');
 
-    if (needsMigration) {
-      console.log('Performing database migration...');
-      await db.withTransactionAsync(async () => {
-        // Create default entries
-        await db.runAsync(
-          'INSERT OR IGNORE INTO itemTypes (name) VALUES ("Default Type")'
-        );
-        await db.runAsync(
-          'INSERT OR IGNORE INTO pcbModels (name) VALUES ("Default Model")'
-        );
-        await db.runAsync(
-          'INSERT OR IGNORE INTO persons (name, phoneNumber) VALUES ("Default Person", "000-0000")'
-        );
-
-        // Backup old table
-        await db.execAsync('ALTER TABLE items RENAME TO items_old');
-
-        // Create new items table
-        await db.execAsync(`
-          CREATE TABLE items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            itemTypeId INTEGER NOT NULL,
-            personId INTEGER NOT NULL,
-            pcbModelId INTEGER NOT NULL,
-            estimatedTime INTEGER NOT NULL, -- Store as an integer (number of days)
-            createdAt TEXT NOT NULL,
-            FOREIGN KEY (itemTypeId) REFERENCES itemTypes(id) ON DELETE CASCADE,
-            FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE,
-            FOREIGN KEY (pcbModelId) REFERENCES pcbModels(id) ON DELETE CASCADE
-          );
-        `);
-
-        // Migrate data
-        const [defaultType] = await db.getAllAsync('SELECT id FROM itemTypes LIMIT 1');
-        const [defaultPerson] = await db.getAllAsync('SELECT id FROM persons LIMIT 1');
-        const [defaultModel] = await db.getAllAsync('SELECT id FROM pcbModels LIMIT 1');
-
-        await db.execAsync(`
-          INSERT INTO items (id, itemTypeId, personId, pcbModelId, estimatedTime)
-          SELECT 
-            id, 
-            ${defaultType.id},
-            ${defaultPerson.id},
-            ${defaultModel.id},
-            estimatedTime
-          FROM items_old
-        `);
-
-        await db.execAsync('DROP TABLE items_old');
-      });
+      // Add missing columns
+      if (!hasRepairAmount) {
+        await db.execAsync('ALTER TABLE items ADD COLUMN repairAmount REAL DEFAULT 0');
+      }
+      if (!hasIsPaid) {
+        await db.execAsync('ALTER TABLE items ADD COLUMN isPaid INTEGER DEFAULT 0');
+      }
+      if (!hasStatus) {
+        await db.execAsync('ALTER TABLE items ADD COLUMN status TEXT DEFAULT "upcoming"');
+      }
+      if (!hasUpdatedAt) {
+        await db.execAsync('ALTER TABLE items ADD COLUMN updatedAt TEXT');
+      }
     } else {
-      // Create fresh items table
+      // Create the items table if it doesn't exist
       await db.execAsync(`
-        CREATE TABLE IF NOT EXISTS items (
+        CREATE TABLE items (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           itemTypeId INTEGER NOT NULL,
           personId INTEGER NOT NULL,
           pcbModelId INTEGER NOT NULL,
           estimatedTime INTEGER NOT NULL, -- Store as an integer (number of days)
           createdAt TEXT NOT NULL, -- ISO 8601 timestamp
+          repairAmount REAL DEFAULT 0, -- New column for repair amount
+          isPaid INTEGER DEFAULT 0, -- New column for payment status (0 = unpaid, 1 = paid)
+          status TEXT DEFAULT "upcoming", -- New column for item status
+          updatedAt TEXT, -- New column for last update timestamp
           FOREIGN KEY (itemTypeId) REFERENCES itemTypes(id) ON DELETE CASCADE,
           FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE,
           FOREIGN KEY (pcbModelId) REFERENCES pcbModels(id) ON DELETE CASCADE
@@ -182,6 +149,7 @@ export const deleteItem = async (itemId) => {
   }
 };
 
+// Fetch items by due status, excluding "nonRepairable" and "handedOver"
 export const getItemsByDueStatus = async () => {
   if (!db) throw new Error('Database not initialized');
 
@@ -192,7 +160,7 @@ export const getItemsByDueStatus = async () => {
         persons.name as personName, persons.priority,
         itemTypes.name as itemType,
         pcbModels.name as pcbModel,
-        DATE(items.createdAt, '+' || items.estimatedTime || ' days') as dueDate, -- Add days directly
+        DATE(items.createdAt, '+' || items.estimatedTime || ' days') as dueDate,
         CASE 
           WHEN DATE(items.createdAt, '+' || items.estimatedTime || ' days') = ? THEN 'dueToday'
           WHEN DATE(items.createdAt, '+' || items.estimatedTime || ' days') < ? THEN 'overdue'
@@ -202,10 +170,45 @@ export const getItemsByDueStatus = async () => {
       JOIN persons ON items.personId = persons.id
       JOIN itemTypes ON items.itemTypeId = itemTypes.id
       JOIN pcbModels ON items.pcbModelId = pcbModels.id
+      WHERE items.status NOT IN ('nonRepairable', 'handedOver') -- Exclude these statuses
       ORDER BY persons.priority DESC, items.createdAt ASC
     `, [today, today]);
   } catch (error) {
     console.error('Error fetching items by due status:', error);
+    throw error;
+  }
+};
+
+// Update item status (e.g., "nonRepairable" or "handedOver") and log the timestamp
+export const updateItemStatus = async (itemId, status) => {
+  if (!db) throw new Error('Database not initialized');
+
+  try {
+    const updatedAt = new Date().toISOString(); // Log the current timestamp
+    await db.runAsync(
+      'UPDATE items SET status = ?, updatedAt = ? WHERE id = ?',
+      [status, updatedAt, itemId]
+    );
+    console.log(`Item ID ${itemId} marked as ${status} at ${updatedAt}`);
+  } catch (error) {
+    console.error('Error updating item status:', error);
+    throw error;
+  }
+};
+
+// Update repair details and mark the item as "handedOver"
+export const updateRepairDetails = async (itemId, repairAmount, isPaid) => {
+  if (!db) throw new Error('Database not initialized');
+
+  try {
+    const updatedAt = new Date().toISOString(); // Log the current timestamp
+    await db.runAsync(
+      'UPDATE items SET repairAmount = ?, isPaid = ?, status = ?, updatedAt = ? WHERE id = ?',
+      [repairAmount, isPaid ? 1 : 0, 'handedOver', updatedAt, itemId]
+    );
+    console.log(`Repair details updated for item ID ${itemId} at ${updatedAt}`);
+  } catch (error) {
+    console.error('Error updating repair details:', error);
     throw error;
   }
 };
@@ -397,6 +400,66 @@ export const clearTable = async (tableName) => {
     return true;
   } catch (error) {
     console.error(`Error clearing table ${tableName}:`, error);
+    throw error;
+  }
+};
+
+export const getFinanceSummary = async () => {
+  if (!db) throw new Error('Database not initialized');
+
+  try {
+    const totalRevenueResult = await db.getFirstAsync(
+      'SELECT SUM(repairAmount) as totalRevenue FROM items WHERE status = "handedOver" AND isPaid = 1'
+    );
+    const pendingPaymentsResult = await db.getFirstAsync(
+      'SELECT SUM(repairAmount) as pendingPayments FROM items WHERE status = "handedOver" AND isPaid = 0'
+    );
+    const monthlyRevenueResult = await db.getFirstAsync(
+      `SELECT SUM(repairAmount) as monthlyRevenue 
+       FROM items 
+       WHERE status = "handedOver" AND isPaid = 1 
+       AND strftime('%Y-%m', updatedAt) = strftime('%Y-%m', 'now')`
+    );
+    const recentTransactions = await db.getAllAsync(
+      `SELECT items.id, items.repairAmount, items.isPaid, items.updatedAt, 
+              persons.name as personName, 
+              itemTypes.name as itemType, 
+              pcbModels.name as pcbModel
+       FROM items
+       JOIN persons ON items.personId = persons.id
+       JOIN itemTypes ON items.itemTypeId = itemTypes.id
+       JOIN pcbModels ON items.pcbModelId = pcbModels.id
+       WHERE items.status = "handedOver"
+       ORDER BY items.updatedAt DESC`
+    );
+
+    return {
+      totalRevenue: totalRevenueResult?.totalRevenue || 0,
+      pendingPayments: pendingPaymentsResult?.pendingPayments || 0,
+      monthlyRevenue: monthlyRevenueResult?.monthlyRevenue || 0,
+      recentTransactions,
+    };
+  } catch (error) {
+    console.error('Error fetching finance summary:', error);
+    throw error;
+  }
+};
+
+export const getFilterData = async () => {
+  if (!db) throw new Error('Database not initialized');
+
+  try {
+    const personNames = await db.getAllAsync('SELECT DISTINCT name FROM persons');
+    const itemTypes = await db.getAllAsync('SELECT DISTINCT name FROM itemTypes');
+    const pcbModels = await db.getAllAsync('SELECT DISTINCT name FROM pcbModels');
+
+    return {
+      personNames: personNames.map((row) => row.name),
+      itemTypes: itemTypes.map((row) => row.name),
+      pcbModels: pcbModels.map((row) => row.name),
+    };
+  } catch (error) {
+    console.error('Error fetching filter data:', error);
     throw error;
   }
 };
