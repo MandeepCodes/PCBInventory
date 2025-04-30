@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "PCBInventory",
-    "slug": "PCBInventory",
+    "name": "RepairTrack",
+    "slug": "repairtrack",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,20 +13,26 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "mandeep.co.repairtrack"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.anonymous.PCBInventory"
+      "package": "mandeep.co.repairtrack"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-sqlite"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "57756d68-f37f-4045-8b1b-eb5cbb519eff"
+      }
+    }
   }
 }
