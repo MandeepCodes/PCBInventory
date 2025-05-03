@@ -58,22 +58,43 @@ export default function InventoryScreen() {
   );
 
   // Function to send WhatsApp message using Linking API
-  const sendWhatsAppMessage = (phoneNumber, message) => {
-    const url = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(
-      message
-    )}`;
-    Linking.canOpenURL(url)
-      .then((supported) => {
-        if (!supported) {
-          Alert.alert('Error', 'WhatsApp is not installed on your device.');
-        } else {
-          return Linking.openURL(url);
-        }
-      })
-      .catch((err) => {
-        console.error(err);
-        Alert.alert('Error', 'Failed to send WhatsApp message.');
-      });
+  const sendWhatsAppMessage = async (phoneNumber, message) => {
+    // Clean phone number format
+    const cleanedPhone = phoneNumber.replace(/^0+/, "").replace(/[+\s]/g, "");
+    const url = `whatsapp://send?phone=${cleanedPhone}&text=${encodeURIComponent(message)}`;
+    const webUrl = `https://wa.me/${cleanedPhone}?text=${encodeURIComponent(message)}`;
+  
+    try {
+      // First try native app
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        // Fallback to web version
+        await Linking.openURL(webUrl);
+      }
+    } catch (error) {
+      console.error('WhatsApp Error:', error);
+      Alert.alert(
+        'WhatsApp Not Found',
+        'Would you like to install WhatsApp?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Install', onPress: () => Linking.openURL('market://details?id=com.whatsapp') }
+        ]
+      );
+    }
+  };
+
+  // Function to send SMS
+  const sendSMS = async (phoneNumber, message) => {
+    const url = `sms:${phoneNumber}?body=${encodeURIComponent(message)}`;
+    try {
+      await Linking.openURL(url);
+    } catch (error) {
+      console.error('SMS Error:', error);
+      Alert.alert('Error', 'Could not send SMS');
+    }
   };
 
   // Handler for "Done" button: send message or SMS to customer.
@@ -88,8 +109,16 @@ export default function InventoryScreen() {
       return;
     }
 
-    // Send via WhatsApp.
-    sendWhatsAppMessage(phone, message);
+    // Add SMS option
+    Alert.alert(
+      'Contact Method',
+      'Choose how to notify the customer:',
+      [
+        { text: 'WhatsApp', onPress: () => sendWhatsAppMessage(phone, message) },
+        { text: 'SMS', onPress: () => sendSMS(phone, message) },
+        { text: 'Cancel', style: 'cancel' }
+      ]
+    );
   };
 
   // Handler for Non-Repairable button

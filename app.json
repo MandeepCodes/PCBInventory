@@ -21,7 +21,20 @@
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "mandeep.co.repairtrack"
+      "package": "mandeep.co.repairtrack",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "whatsapp",
+              "host": "send"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
+      "packageWhitelist": ["com.whatsapp"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
