@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Dimensions,
 } from 'react-native';
+import { Pager } from 'react-native-pager-view';
 import { TabView, SceneMap, TabBar } from 'react-native-tab-view';
 import {
   getAllItemTypes,
@@ -129,10 +130,11 @@ export default function ManageEntitiesScreen() {
 
   // Render a list for each scene.
   const renderScene = ({ route }) => {
+    const data = entities[route.key] || []; // Fallback to an empty array
     return (
       <View style={styles.sceneContainer}>
         <FlatList
-          data={entities[route.key]}
+          data={data}
           keyExtractor={(item) => item.id.toString()}
           renderItem={({ item }) => (
             <View style={styles.entityItemContainer}>

@@ -29,7 +29,8 @@
     "react-native-screens": "~4.10.0",
     "react-native-tab-view": "^4.0.10",
     "react-native-vector-icons": "^10.2.0",
-    "realm": "^12.14.2"
+    "realm": "^12.14.2",
+    "react-native-pager-view": "6.7.1"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0"
