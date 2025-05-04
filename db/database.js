@@ -11,6 +11,11 @@ const tableExists = async (tableName) => {
   return result.length > 0;
 };
 
+// Helper function to create indexes
+const createIndex = async (indexName, tableName, columnName) => {
+  await db.execAsync(`CREATE INDEX IF NOT EXISTS ${indexName} ON ${tableName}(${columnName});`);
+};
+
 // Initialize database with proper typing
 export const initDB = async () => {
   try {
@@ -18,7 +23,7 @@ export const initDB = async () => {
     db = await openDatabaseAsync('inventory.db');
     await db.execAsync('PRAGMA foreign_keys = ON;');
 
-    // Create reference tables first
+    // Create reference tables
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS persons (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,23 +52,18 @@ export const initDB = async () => {
     if (itemsExists) {
       // Check for missing columns in the items table
       const itemsColumns = await db.getAllAsync('PRAGMA table_info(items)');
-      const hasRepairAmount = itemsColumns.some(col => col.name === 'repairAmount');
-      const hasIsPaid = itemsColumns.some(col => col.name === 'isPaid');
-      const hasStatus = itemsColumns.some(col => col.name === 'status');
-      const hasUpdatedAt = itemsColumns.some(col => col.name === 'updatedAt');
+      const requiredColumns = [
+        { name: 'repairAmount', type: 'REAL DEFAULT 0' },
+        { name: 'isPaid', type: 'INTEGER DEFAULT 0' },
+        { name: 'status', type: 'TEXT DEFAULT "upcoming"' },
+        { name: 'updatedAt', type: 'TEXT' },
+      ];
 
-      // Add missing columns
-      if (!hasRepairAmount) {
-        await db.execAsync('ALTER TABLE items ADD COLUMN repairAmount REAL DEFAULT 0');
-      }
-      if (!hasIsPaid) {
-        await db.execAsync('ALTER TABLE items ADD COLUMN isPaid INTEGER DEFAULT 0');
-      }
-      if (!hasStatus) {
-        await db.execAsync('ALTER TABLE items ADD COLUMN status TEXT DEFAULT "upcoming"');
-      }
-      if (!hasUpdatedAt) {
-        await db.execAsync('ALTER TABLE items ADD COLUMN updatedAt TEXT');
+      for (const column of requiredColumns) {
+        const columnExists = itemsColumns.some(col => col.name === column.name);
+        if (!columnExists) {
+          await db.execAsync(`ALTER TABLE items ADD COLUMN ${column.name} ${column.type}`);
+        }
       }
     } else {
       // Create the items table if it doesn't exist
@@ -86,6 +86,12 @@ export const initDB = async () => {
       `);
     }
 
+    // Create indexes for performance optimization
+    await createIndex('idx_items_personId', 'items', 'personId');
+    await createIndex('idx_items_itemTypeId', 'items', 'itemTypeId');
+    await createIndex('idx_items_pcbModelId', 'items', 'pcbModelId');
+    await createIndex('idx_items_status', 'items', 'status');
+
     console.log('Database initialized successfully');
     return true;
   } catch (error) {
@@ -93,9 +99,6 @@ export const initDB = async () => {
     throw error;
   }
 };
-
-// Rest of your CRUD operations remain the same as previous version
-// (addItemToDB, getAllItems, addPerson, etc.)
 
 // ==================== ITEM OPERATIONS ====================
 export const addItemToDB = async (itemTypeId, personId, pcbModelId, estimatedTime) => {
@@ -121,7 +124,7 @@ export const getAllItems = async () => {
   
   try {
     return await db.getAllAsync(`
-      SELECT items.*, 
+      SELECT items.id, items.status, items.createdAt, items.updatedAt, 
         persons.name as personName,
         itemTypes.name as itemType,
         pcbModels.name as pcbModel
@@ -144,7 +147,7 @@ export const getItemsByDueStatus = async () => {
   try {
     const today = new Date().toISOString().split('T')[0]; // Get today's date in YYYY-MM-DD format
     return await db.getAllAsync(`
-      SELECT items.*, 
+      SELECT items.id, items.status, items.createdAt, items.updatedAt, 
         persons.name as personName, persons.phoneNumber, persons.priority,
         itemTypes.name as itemType,
         pcbModels.name as pcbModel,

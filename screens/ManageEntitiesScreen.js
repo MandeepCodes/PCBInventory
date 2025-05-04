@@ -25,7 +25,6 @@ import {
 } from '../db/database';
 
 export default function ManageEntitiesScreen() {
-  // For tab navigation
   const [index, setIndex] = useState(0);
   const [routes] = useState([
     { key: 'itemType', title: 'Item Types' },
@@ -33,20 +32,41 @@ export default function ManageEntitiesScreen() {
     { key: 'pcbModel', title: 'PCB Models' },
   ]);
 
-  // Store fetched data for each entity type.
   const [entities, setEntities] = useState({
     itemType: [],
     person: [],
     pcbModel: [],
   });
 
-  // Modal state for the Floating Add Menu
   const [modalVisible, setModalVisible] = useState(false);
   const [newEntry, setNewEntry] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [priority, setPriority] = useState(1);
 
-  // Helper: fetch entities data for a given type.
+  // Fetch all entities on component mount
+  useEffect(() => {
+    const fetchAllEntities = async () => {
+      try {
+        const [itemTypes, persons, pcbModels] = await Promise.all([
+          getAllItemTypes(),
+          getAllPersons(),
+          getAllPcbModels(),
+        ]);
+        setEntities({
+          itemType: itemTypes,
+          person: persons,
+          pcbModel: pcbModels,
+        });
+      } catch (error) {
+        console.error('Error fetching entities:', error);
+        Alert.alert('Error', 'Failed to fetch entities. Please try again.');
+      }
+    };
+
+    fetchAllEntities();
+  }, []);
+
+  // Fetch entities for a specific type
   const fetchEntitiesForType = async (type) => {
     try {
       let data = [];
@@ -60,17 +80,11 @@ export default function ManageEntitiesScreen() {
       setEntities((prev) => ({ ...prev, [type]: data }));
     } catch (error) {
       console.error(`Error fetching ${type}s:`, error);
+      Alert.alert('Error', `Failed to fetch ${type}s. Please try again.`);
     }
   };
 
-  // Initial fetch for all types.
-  useEffect(() => {
-    fetchEntitiesForType('itemType');
-    fetchEntitiesForType('person');
-    fetchEntitiesForType('pcbModel');
-  }, []);
-
-  // Handle add action based on the active tab.
+  // Handle adding a new entity
   const handleAddEntity = async () => {
     const currentType = routes[index].key;
 
@@ -80,27 +94,30 @@ export default function ManageEntitiesScreen() {
     }
 
     if (currentType === 'person') {
-      // Validate phone number
-      const phoneRegex = /^\d{10}$/; // Matches exactly 10 digits
+      const phoneRegex = /^\d{10}$/;
       if (!phoneRegex.test(phoneNumber)) {
         Alert.alert('Error', 'Please enter a valid 10-digit phone number.');
+        return;
+      }
+
+      if (priority < 1 || priority > 5) {
+        Alert.alert('Error', 'Priority must be between 1 and 5.');
         return;
       }
     }
 
     try {
       if (currentType === 'person') {
-        await addPerson(newEntry, phoneNumber, priority);
+        await addPerson(newEntry.trim(), phoneNumber, priority);
       } else if (currentType === 'itemType') {
-        await addItemType(newEntry);
+        await addItemType(newEntry.trim());
       } else if (currentType === 'pcbModel') {
-        await addPcbModel(newEntry);
+        await addPcbModel(newEntry.trim());
       }
       Alert.alert('Success', `${currentType} added successfully!`);
       setNewEntry('');
       setPhoneNumber('');
       setPriority(1);
-      // Refresh the list.
       await fetchEntitiesForType(currentType);
       setModalVisible(false);
     } catch (error) {
@@ -109,7 +126,7 @@ export default function ManageEntitiesScreen() {
     }
   };
 
-  // Handle delete action for current entity type.
+  // Handle deleting an entity
   const handleDeleteEntity = async (id) => {
     const currentType = routes[index].key;
     try {
@@ -128,14 +145,19 @@ export default function ManageEntitiesScreen() {
     }
   };
 
-  // Render a list for each scene.
+  // Render a list for each tab
   const renderScene = ({ route }) => {
-    const data = entities[route.key] || []; // Fallback to an empty array
+    const data = entities[route.key] || [];
+    const titles = {
+      itemType: 'Item Types',
+      person: 'Persons',
+      pcbModel: 'PCB Models',
+    };
     return (
       <View style={styles.sceneContainer}>
         <FlatList
           data={data}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item, index) => (item.id ? item.id.toString() : index.toString())}
           renderItem={({ item }) => (
             <View style={styles.entityItemContainer}>
               <Text style={styles.entityItemText}>
@@ -153,7 +175,7 @@ export default function ManageEntitiesScreen() {
           )}
           ListEmptyComponent={
             <Text style={styles.emptyText}>
-              No {route.title.toLowerCase()} found!
+              No {titles[route.key].toLowerCase()} found!
             </Text>
           }
           contentContainerStyle={{ paddingBottom: 100 }}
@@ -180,16 +202,25 @@ export default function ManageEntitiesScreen() {
           />
         )}
       />
-      {/* Floating Action Button */}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => setModalVisible(true)}
+        accessibilityLabel="Add new entity"
+        accessibilityHint="Opens a modal to add a new entity"
       >
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
-      {/* Floating Add Menu Modal */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+      <Modal
+        visible={modalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPressOut={() => setModalVisible(false)}
+        >
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>
               Add {routes[index].key === 'itemType'
@@ -240,7 +271,7 @@ export default function ManageEntitiesScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -356,5 +387,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
-//export default ManageEntitiesScreen;
