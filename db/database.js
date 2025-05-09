@@ -57,6 +57,7 @@ export const initDB = async () => {
         { name: 'isPaid', type: 'INTEGER DEFAULT 0' },
         { name: 'status', type: 'TEXT DEFAULT "upcoming"' },
         { name: 'updatedAt', type: 'TEXT' },
+        { name: 'serialNumber', type: 'TEXT UNIQUE' } // Add serialNumber column
       ];
 
       for (const column of requiredColumns) {
@@ -79,6 +80,7 @@ export const initDB = async () => {
           isPaid INTEGER DEFAULT 0, -- New column for payment status (0 = unpaid, 1 = paid)
           status TEXT DEFAULT "upcoming", -- New column for item status
           updatedAt TEXT, -- New column for last update timestamp
+          serialNumber TEXT UNIQUE, -- New column for serial number
           FOREIGN KEY (itemTypeId) REFERENCES itemTypes(id) ON DELETE CASCADE,
           FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE,
           FOREIGN KEY (pcbModelId) REFERENCES pcbModels(id) ON DELETE CASCADE
@@ -107,10 +109,26 @@ export const addItemToDB = async (itemTypeId, personId, pcbModelId, estimatedTim
   try {
     const currentTime = new Date().toISOString(); // Get the current timestamp
     return await db.withTransactionAsync(async () => {
-      const result = await db.runAsync(
-        `INSERT INTO items (itemTypeId, personId, pcbModelId, estimatedTime, createdAt) VALUES (?, ?, ?, ?, ?)`,
-        [itemTypeId, personId, pcbModelId, estimatedTime, currentTime]
+      // Get the last serial number
+      const lastSerial = await db.getFirstAsync(
+        `SELECT serialNumber FROM items ORDER BY id DESC LIMIT 1`
       );
+
+      // Generate the next serial number
+      let nextSerial = 'AA001';
+      if (lastSerial?.serialNumber) {
+        const prefix = lastSerial.serialNumber.slice(0, 2); // Extract "AA"
+        const number = parseInt(lastSerial.serialNumber.slice(2), 10); // Extract "001"
+        nextSerial = `${prefix}${String(number + 1).padStart(3, '0')}`; // Increment and pad
+      }
+
+      // Insert the new item
+      const result = await db.runAsync(
+        `INSERT INTO items (itemTypeId, personId, pcbModelId, estimatedTime, createdAt, serialNumber) 
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [itemTypeId, personId, pcbModelId, estimatedTime, currentTime, nextSerial]
+      );
+
       return result.lastInsertRowId;
     });
   } catch (error) {
@@ -124,7 +142,7 @@ export const getAllItems = async () => {
   
   try {
     return await db.getAllAsync(`
-      SELECT items.id, items.status, items.createdAt, items.updatedAt, 
+      SELECT items.id, items.serialNumber, items.status, items.createdAt, items.updatedAt, 
         persons.name as personName,
         itemTypes.name as itemType,
         pcbModels.name as pcbModel
@@ -383,7 +401,7 @@ export const getFinanceSummary = async () => {
        AND strftime('%Y-%m', updatedAt) = strftime('%Y-%m', 'now')`
     );
     const recentTransactions = await db.getAllAsync(
-      `SELECT items.id, items.repairAmount, items.isPaid, items.updatedAt, 
+      `SELECT items.id, items.serialNumber, items.repairAmount, items.isPaid, items.updatedAt, 
               persons.name as personName, 
               itemTypes.name as itemType, 
               pcbModels.name as pcbModel
