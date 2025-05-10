@@ -92,8 +92,18 @@ export default function AddItemScreen() {
     }
 
     try {
-      await addItemToDB(itemTypeId, personId, pcbModelId, estimatedTime);
-      Alert.alert('Success', 'Item added successfully!');
+      // Add the item to the database and get the inserted item's ID
+      const itemId = await addItemToDB(itemTypeId, personId, pcbModelId, estimatedTime);
+
+      // Fetch the serial number of the newly added item
+      const addedItem = await db.getFirstAsync(
+        `SELECT serialNumber FROM items WHERE id = ?`,
+        [itemId]
+      );
+
+      // Display the success message with the serial number
+      Alert.alert('Success', `Item added successfully! Serial Number: ${addedItem.serialNumber}`);
+
       // Clear the form fields
       setItemTypeId(null);
       setPersonId(null);
